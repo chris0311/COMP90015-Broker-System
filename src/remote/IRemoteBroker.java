@@ -19,4 +19,5 @@ public interface IRemoteBroker extends Remote {
     public void ping(String name, NodeType type) throws RemoteException;
     public void addPublisher(String publisherName) throws RemoteException;
     public void removePublisher(String publisherName) throws RemoteException;
+    public String getSubscribersCount(String publisherName) throws RemoteException;
 }

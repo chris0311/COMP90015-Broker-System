@@ -32,6 +32,10 @@ public class Broker {
             for (HashMap<String, Integer> broker : remoteDirectory.listBrokers()) {
                 String address = broker.keySet().iterator().next();
                 int port = broker.get(address);
+                if (port == Broker.port) {
+                    continue;
+                }
+
                 brokers.add((IRemoteBroker) registry.lookup("localhost" + ":" + port));
             }
 

@@ -27,7 +27,7 @@ public class Broker {
             // list all brokers
             System.out.println(remoteDirectory.listBrokers());
 
-            // create a list of remote brokers
+            // create a list of remote brokersLo
             ArrayList<IRemoteBroker> brokers = new ArrayList<>();
             for (HashMap<String, Integer> broker : remoteDirectory.listBrokers()) {
                 String address = broker.keySet().iterator().next();

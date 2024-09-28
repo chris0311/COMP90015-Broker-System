@@ -10,8 +10,8 @@ import java.util.ArrayList;
 public interface IRemoteBroker extends Remote {
     public void addTopic(long topicId, String topicName, String publisherName) throws RemoteException;
     public void removeTopic(long topicId) throws RemoteException;
-    public void addSubscriber(long topicId, String subscriberName) throws RemoteException;
-    public void removeSubscriber(long topicId, String subscriberName) throws RemoteException;
+    public void subscribe(long topicId, String subscriberName) throws RemoteException;
+    public void unsubscribe(long topicId, String subscriberName) throws RemoteException;
     public void publishMessage(long topicId, String message) throws RemoteException;
     public ArrayList<Topic> listTopics() throws RemoteException;
     public ArrayList<String> listSubscribers(long topicId) throws RemoteException;
@@ -20,4 +20,5 @@ public interface IRemoteBroker extends Remote {
     public void addPublisher(String publisherName) throws RemoteException;
     public void removePublisher(String publisherName) throws RemoteException;
     public String getSubscribersCount(String publisherName) throws RemoteException;
+    ArrayList<Topic> listSubscribedTopics(String subscriberName) throws RemoteException;
 }

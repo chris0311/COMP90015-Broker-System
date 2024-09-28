@@ -2,29 +2,25 @@ package broker;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
-import common.CacheList;
 import common.MessageType;
 import common.NodeType;
-import message.Message;
 import message.Topic;
 import remote.IRemoteBroker;
-import remote.IRemoteDirectory;
+import remote.IRemoteSubscriber;
 
 import java.rmi.RemoteException;  // Required for handling remote communication errors.
 import java.rmi.registry.Registry;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.function.Supplier;
 
 public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
     private ArrayList<Topic> topics = new ArrayList<>();
     // topic id and list of subscribers
-    private ConcurrentHashMap<Long, ArrayList<String>> subscribers = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<Long, ArrayList<String>> subscriberTopics = new ConcurrentHashMap<>();
     private ConcurrentLinkedQueue<String> publishers = new ConcurrentLinkedQueue<>();
     private Registry registry;
     private HashSet<IRemoteBroker> brokers;
@@ -73,29 +69,29 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
     }
 
     @Override
-    public void addSubscriber(long topicId, String subscriberName) throws RemoteException {
+    public void subscribe(long topicId, String subscriberName) throws RemoteException {
         if (emptyTopic(topicId)) {
             throw new RemoteException("Topic does not exist.");
         }
 
-        if (subscribers.containsKey(topicId)) {
-            ArrayList<String> topicSubscribers = subscribers.get(topicId);
+        if (subscriberTopics.containsKey(topicId)) {
+            ArrayList<String> topicSubscribers = subscriberTopics.get(topicId);
             topicSubscribers.add(subscriberName);
         } else {
             ArrayList<String> topicSubscribers = new ArrayList<>();
             topicSubscribers.add(subscriberName);
-            subscribers.put(topicId, topicSubscribers);
+            subscriberTopics.put(topicId, topicSubscribers);
         }
     }
 
     @Override
-    public void removeSubscriber(long topicId, String subscriberName) throws RemoteException {
+    public void unsubscribe(long topicId, String subscriberName) throws RemoteException {
         if (emptyTopic(topicId)) {
             throw new RemoteException("Topic does not exist.");
         }
 
-        if (subscribers.containsKey(topicId)) {
-            ArrayList<String> topicSubscribers = subscribers.get(topicId);
+        if (subscriberTopics.containsKey(topicId)) {
+            ArrayList<String> topicSubscribers = subscriberTopics.get(topicId);
             topicSubscribers.remove(subscriberName);
         } else {
             throw new RemoteException("Subscriber does not exist.");
@@ -105,10 +101,16 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
     @Override
     public void publishMessage(long topicId, String message) throws RemoteException {
         // send message to all local subscribers
-        if (subscribers.containsKey(topicId)) {
-            ArrayList<String> topicSubscribers = subscribers.get(topicId);
+        // TODO: Use message Class
+        if (subscriberTopics.containsKey(topicId)) {
+            ArrayList<String> topicSubscribers = subscriberTopics.get(topicId);
             for (String subscriber : topicSubscribers) {
-                System.out.println("Message: " + message + " sent to " + subscriber);
+                try {
+                    IRemoteSubscriber remoteSubscriber = (IRemoteSubscriber) registry.lookup("subscriber/"+subscriber);
+                    remoteSubscriber.receiveMessage(message);
+                } catch (Exception e) {
+                    System.err.println("Broker exception: " + e.toString());
+                }
             }
         }
 
@@ -129,7 +131,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
 
     @Override
     public ArrayList<String> listSubscribers(long topicId) throws RemoteException {
-        return subscribers.get(topicId);
+        return subscriberTopics.get(topicId);
     }
 
     @Override
@@ -171,8 +173,8 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
                 String topicName = topic.getTopicName();
                 long topicId = topic.getTopicId();
                 int subscriberCount = 0;
-                if (subscribers.containsKey(topicId)) {
-                    subscriberCount = subscribers.get(topicId).size();
+                if (subscriberTopics.containsKey(topicId)) {
+                    subscriberCount = subscriberTopics.get(topicId).size();
                 }
                 res.append(topicId).append(" ").append(topicName).append(" ").append(subscriberCount).append("\n");
             }
@@ -181,6 +183,21 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
             res = new StringBuilder("No topics found for publisher: " + publisherName);
         }
         return res.toString();
+    }
+
+    @Override
+    public ArrayList<Topic> listSubscribedTopics(String subscriberName) throws RemoteException {
+        ArrayList<Topic> subscribedTopics = new ArrayList<>();
+        for (Topic topic : topics) {
+            long topicId = topic.getTopicId();
+            if (subscriberTopics.containsKey(topicId)) {
+                ArrayList<String> topicSubscribers = subscriberTopics.get(topicId);
+                if (topicSubscribers.contains(subscriberName)) {
+                    subscribedTopics.add(topic);
+                }
+            }
+        }
+        return subscribedTopics;
     }
 
     private boolean emptyTopic(long topicId) throws RemoteException {

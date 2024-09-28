@@ -1,6 +1,8 @@
 package message;
 
-public class Topic {
+import java.io.Serializable;
+
+public class Topic implements Serializable {
     private long topicId;
     private String topicName;
     private String publisherName;
@@ -33,5 +35,14 @@ public class Topic {
 
     public void setPublisherName(String publisherName) {
         this.publisherName = publisherName;
+    }
+
+    @Override
+    public String toString() {
+        return "Topic{" +
+                "topicId=" + topicId +
+                ", topicName='" + topicName + '\'' +
+                ", publisherName='" + publisherName + '\'' +
+                '}';
     }
 }

@@ -1,5 +1,6 @@
 package publisher;
 
+import message.Message;
 import remote.IRemoteBroker;
 import remote.IRemoteDirectory;
 
@@ -45,7 +46,8 @@ public class Publisher {
                     }
 
                     try {
-                        remoteBroker.publishMessage(topicId, commandParts[2]);
+                        Message message = new Message(topicId, commandParts[2], publisherName);
+                        remoteBroker.publishMessage(message);
                     } catch (RemoteException e) {
                         e.printStackTrace();
                     }

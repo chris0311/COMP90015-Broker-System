@@ -44,6 +44,7 @@ public class Subscriber {
 
                     try {
                         remoteBroker.subscribe(topicId, subscriberName);
+                        System.out.println("Subscribed to topic " + topicId);
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
@@ -96,6 +97,7 @@ public class Subscriber {
             String address = brokers.get(randomBroker).keySet().iterator().next();
             int port = brokers.get(randomBroker).get(address);
             remoteBroker = (IRemoteBroker) registry.lookup(address + ":" + port);
+            remoteBroker.addSubscriber(subscriberName);
 
             // register subscriber
             RemoteSubscriber remoteSubscriber = new RemoteSubscriber();

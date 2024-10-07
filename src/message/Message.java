@@ -1,20 +1,19 @@
 package message;
 
-public class Message {
-    private long messageId;
+import java.io.Serializable;
+import java.util.Objects;
+
+public class Message implements Serializable {
     private long topicId;
     private String message;
     private long timestamp;
+    private String publisherName;
 
-    public Message(long messageId, long topicId, String message) {
-        this.messageId = messageId;
+    public Message(long topicId, String message, String publisherName) {
         this.topicId = topicId;
         this.message = message;
         this.timestamp = System.currentTimeMillis();
-    }
-
-    public long getMessageId() {
-        return messageId;
+        this.publisherName = publisherName;
     }
 
     public long getTopicId() {
@@ -23,10 +22,6 @@ public class Message {
 
     public String getMessage() {
         return message;
-    }
-
-    public void setMessageId(long messageId) {
-        this.messageId = messageId;
     }
 
     public void setTopicId(long topicId) {
@@ -39,5 +34,15 @@ public class Message {
 
     public long getTimestamp() {
         return timestamp;
+    }
+
+    @Override
+    public int hashCode() {
+        // create hashcode based on topicId, publisherName, timestamp, and message
+        return Objects.hash(topicId, publisherName, timestamp, message);
+    }
+
+    public String getPublisherName() {
+        return publisherName;
     }
 }

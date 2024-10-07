@@ -1,5 +1,6 @@
 package common;
 
+// TODO: add topic id to message
 public enum MessageType {
     PUBLISH,
     SUBSCRIBE,

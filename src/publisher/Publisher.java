@@ -1,25 +1,42 @@
 package publisher;
 
+import common.NodeType;
 import message.Message;
 import message.Request;
 import message.Topic;
 import remote.IRemoteBroker;
 import remote.IRemoteDirectory;
 
-import java.rmi.RemoteException;  // Required for handling remote communication errors.
-import java.rmi.registry.Registry;
+import java.rmi.ConnectException;
+import java.rmi.RemoteException;
+import java.rmi.UnmarshalException;
 import java.rmi.registry.LocateRegistry;
+import java.rmi.registry.Registry;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Scanner;
 
 public class Publisher {
+    private static final Scanner scanner = new Scanner(System.in);
     private static Registry registry;
     private static String publisherName;
-    private static final Scanner scanner = new Scanner(System.in);
     private static IRemoteBroker remoteBroker;
 
     public static void main(String[] args) {
+        // Register shutdown hook
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("Shutting down...");
+            // perform remove publisher
+            try {
+                Request request = new Request(publisherName);
+                remoteBroker.removePublisher(request);
+            } catch (ConnectException | UnmarshalException e) {
+                System.out.println("Broker disconnected.");
+            } catch (RemoteException e) {
+                e.printStackTrace();
+            }
+        }));
+
         initConnection(args);
 
         while (true) {
@@ -110,6 +127,22 @@ public class Publisher {
             int port = brokers.get(randomBroker).get(address);
             remoteBroker = (IRemoteBroker) registry.lookup(address + ":" + port);
             remoteBroker.addPublisher(publisherName);
+
+            // Start a separate thread for pinging the server
+            Thread pingThread = new Thread(() -> {
+                try {
+                    while (true) {
+                        remoteBroker.ping(publisherName, NodeType.PUBLISHER);
+                        Thread.sleep(1000); // Ping every second
+                    }
+                } catch (Exception e) {
+                    System.err.println("Ping thread error: " + e.getMessage());
+                }
+            });
+
+            pingThread.setDaemon(true); // Set as daemon so it terminates when the main thread ends
+            pingThread.start();
+
         } catch (Exception e) {
             System.err.println("Publisher exception: " + e.toString());
             System.exit(1);

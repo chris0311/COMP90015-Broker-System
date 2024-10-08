@@ -1,11 +1,14 @@
 package subscriber;
 
+import common.NodeType;
 import message.Request;
 import message.Topic;
 import remote.IRemoteBroker;
 import remote.IRemoteDirectory;
 import remote.IRemoteSubscriber;
 
+import java.rmi.NotBoundException;
+import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.util.ArrayList;
@@ -19,6 +22,19 @@ public class Subscriber {
     private static Registry registry;
 
     public static void main(String[] args) {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("Shutting down...");
+            // perform remove publisher
+            try {
+                remoteBroker.removeSubscriber(subscriberName);
+                registry.unbind("subscriber/" + subscriberName);
+            } catch (RemoteException e) {
+                e.printStackTrace();
+            } catch (NotBoundException e) {
+                System.out.println("Subscriber not bound, skipping unbinding.");
+            }
+        }));
+
         initConnection(args);
         while(true) {
             System.out.println("Please select command: list, sub, current, unsub.");
@@ -99,6 +115,21 @@ public class Subscriber {
             int port = brokers.get(randomBroker).get(address);
             remoteBroker = (IRemoteBroker) registry.lookup(address + ":" + port);
             remoteBroker.addSubscriber(subscriberName);
+
+            // Start a separate thread for pinging the server
+            Thread pingThread = new Thread(() -> {
+                try {
+                    while (true) {
+                        remoteBroker.ping(subscriberName, NodeType.SUBSCRIBER);
+                        Thread.sleep(1000); // Ping every second
+                    }
+                } catch (Exception e) {
+                    System.err.println("Ping thread error: " + e.getMessage());
+                }
+            });
+
+            pingThread.setDaemon(true); // Set as daemon so it terminates when the main thread ends
+            pingThread.start();
 
             // register subscriber
             RemoteSubscriber remoteSubscriber = new RemoteSubscriber();

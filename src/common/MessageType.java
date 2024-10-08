@@ -9,4 +9,5 @@ public enum MessageType {
     REMOVE_TOPIC,
     MESSAGE,
     SUBSCRIBER_COUNT,
+    REMOVE_PUBLISHER,
 }

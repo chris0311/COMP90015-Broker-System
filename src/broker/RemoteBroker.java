@@ -17,14 +17,14 @@ import java.rmi.server.UnicastRemoteObject;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
     private ArrayList<Topic> topics = new ArrayList<>();
     // topic id and list of subscribers
     private ConcurrentHashMap<Long, ArrayList<String>> subscriberTopics = new ConcurrentHashMap<>();
     private ConcurrentHashMap<Long, Integer> subscriberCount = new ConcurrentHashMap<>();
-    private ConcurrentLinkedQueue<String> publishers = new ConcurrentLinkedQueue<>();
+    private ConcurrentHashMap<String, Long> publishers = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, Long> subscribers = new ConcurrentHashMap<>();
     private Registry registry;
     private HashSet<IRemoteBroker> brokers;
     private HashSet<Integer> brokerPorts = new HashSet<>();
@@ -33,6 +33,43 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
 
     protected RemoteBroker(ArrayList<IRemoteBroker> brokers, int port) throws RemoteException {
         super();
+
+        // Start a thread to monitor client activity and clean up inactive clients
+        new Thread(() -> {
+            while (true) {
+                try {
+                    Thread.sleep(1000); // Check every second
+                    long currentTime = System.currentTimeMillis();
+                    long currentTimeSeconds = currentTime / 1000;
+                    subscribers.entrySet().removeIf(entry -> {
+                        if (currentTime - entry.getValue() > 2000) {
+                            System.out.println("Cleaning up client: " + entry.getKey() + " at " + currentTimeSeconds);
+                            this.unsubscribeAll(entry.getKey());
+
+                            return true;
+                        }
+                        return false;
+                    });
+                    publishers.entrySet().removeIf(entry -> {
+                        if (currentTime - entry.getValue() > 2000) {
+                            System.out.println("Cleaning up publisher: " + entry.getKey() + " at " + currentTimeSeconds);
+                            Request request = new Request(entry.getKey());
+                            try {
+                                this.removePublisher(request);
+                                // add key back to publishers to avoid errors
+                                publishers.put(entry.getKey(), currentTime);
+                            } catch (RemoteException e) {
+                                e.printStackTrace();
+                            }
+                            return true;
+                        }
+                        return false;
+                    });
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }).start();
 
         registry = LocateRegistry.getRegistry("localhost", 1099);
         this.brokers = new HashSet<>(brokers);
@@ -105,8 +142,8 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
         // add to cache and flood
         Request request = new Request(topicId);
         String cacheKey = request.getIdentifier();
-        if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.SUBSCRIBE) {
-            cache.put(cacheKey, MessageType.SUBSCRIBE);
+        if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.SUBSCRIBER_COUNT) {
+            cache.put(cacheKey, MessageType.SUBSCRIBER_COUNT);
             this.subscriberCount.put(topicId, this.subscriberCount.getOrDefault(topicId, 0) + 1);
 
             System.out.println("Subscriber " + subscriberName + " subscribed to topic: " + topicId);
@@ -230,18 +267,40 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
 
     @Override
     public void ping(String name, NodeType type) throws RemoteException {
-        System.out.println("Ping from " + type + ": " + name);
+        switch (type) {
+            case PUBLISHER:
+                publishers.put(name, System.currentTimeMillis());
+                break;
+            case SUBSCRIBER:
+                subscribers.put(name, System.currentTimeMillis());
+                break;
+        }
     }
 
     @Override
     public void addPublisher(String publisherName) throws RemoteException {
-        publishers.add(publisherName);
-        System.out.println("Publisher " + publisherName + " added.");
+        long currentTimeMillis = System.currentTimeMillis();
+        long currentTimeSeconds = currentTimeMillis / 1000;
+        publishers.put(publisherName, currentTimeMillis);
+        System.out.println("Publisher " + publisherName + " added at " + currentTimeSeconds);
     }
 
     @Override
-    public void removePublisher(String publisherName) throws RemoteException {
-        publishers.remove(publisherName);
+    public void removePublisher(Request request) throws RemoteException {
+        String cacheKey = request.getIdentifier();
+        if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.REMOVE_PUBLISHER) {
+            cache.put(cacheKey, MessageType.REMOVE_PUBLISHER);
+            String publisherName = (String) request.getObject();
+
+            // remove all local topics
+            this.removeAllLocalTopics(publisherName);
+            publishers.remove(publisherName);
+            System.out.println("Publisher " + publisherName + " removed.");
+
+            for (IRemoteBroker broker : brokers) {
+                broker.removePublisher(request);
+            }
+        }
     }
 
     @Override
@@ -307,9 +366,58 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
     }
 
     public void addSubscriber(String subscriberName) {
-        System.out.println("Subscriber " + subscriberName + " added.");
+        long currentTimeMillis = System.currentTimeMillis();
+        long currentTimeSeconds = currentTimeMillis / 1000;
+        System.out.println("Subscriber " + subscriberName + " added at " + currentTimeSeconds);
+        // Add the subscriber to the subscribers map
+        subscribers.put(subscriberName, currentTimeMillis);
     }
 
+
+    public void removeSubscriber(String subscriberName) {
+        this.unsubscribeAll(subscriberName);
+        subscribers.remove(subscriberName);
+    }
+
+    private void unsubscribeAll(String subscriberName) {
+        for (Topic topic : topics) {
+            long topicId = topic.getTopicId();
+            if (subscriberTopics.containsKey(topicId)) {
+                ArrayList<String> topicSubscribers = subscriberTopics.get(topicId);
+                topicSubscribers.remove(subscriberName);
+
+                // decrease subscriber count
+                Request request = new Request(topicId);
+                try {
+                    this.decreaseSubscriberCount(request);
+                } catch (RemoteException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
+    }
+
+    private void removeAllLocalTopics(String publisherName) {
+        ArrayList<Topic> topicsToRemove = new ArrayList<>();
+        for (Topic topic : topics) {
+            if (topic.getPublisherName().equals(publisherName)) {
+                long topicId = topic.getTopicId();
+                // notify all subscribers
+                if (subscriberTopics.containsKey(topicId)) {
+                    ArrayList<String> topicSubscribers = subscriberTopics.get(topicId);
+                    for (String subscriber : topicSubscribers) {
+                        messageSubscriber(subscriber, "publisher disconnected: " + publisherName + "; " + "you are unsubscribed from topic " + topicId);
+                    }
+                }
+
+                subscriberTopics.remove(topicId);
+                subscriberCount.remove(topicId);
+                topicsToRemove.add(topic);
+            }
+        }
+        topics.removeAll(topicsToRemove);
+        System.out.println("All topics removed for publisher: " + publisherName);
+    }
 //    public static <T> void flood(
 //            Cache<String, MessageType> cache,
 //            T key,

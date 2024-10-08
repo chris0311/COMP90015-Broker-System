@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
     private ArrayList<Topic> topics = new ArrayList<>();
     // topic id and list of subscribers
-    private ConcurrentHashMap<Long, ArrayList<String>> subscriberTopics = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<Long, HashSet<String>> subscriberTopics = new ConcurrentHashMap<>();
     private ConcurrentHashMap<Long, Integer> subscriberCount = new ConcurrentHashMap<>();
     private ConcurrentHashMap<String, Long> publishers = new ConcurrentHashMap<>();
     private ConcurrentHashMap<String, Long> subscribers = new ConcurrentHashMap<>();
@@ -81,6 +81,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
             cache.put(cacheKey, MessageType.ADD_TOPIC);
             Topic newTopic = (Topic) request.getObject();
             topics.add(newTopic);
+            subscriberCount.put(newTopic.getTopicId(), 0);
             for (IRemoteBroker broker : brokers) {
                 broker.addTopic(request);
             }
@@ -100,7 +101,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
 
             // send message to all local subscribers
             if (subscriberTopics.containsKey(topicId)) {
-                ArrayList<String> topicSubscribers = subscriberTopics.get(topicId);
+                HashSet<String> topicSubscribers = subscriberTopics.get(topicId);
                 for (String subscriber : topicSubscribers) {
                     messageSubscriber(subscriber, "Topic removed: " + topicId + "; " + "you are unsubscribed.");
                 }
@@ -126,14 +127,13 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
             throw new RemoteException("Topic does not exist.");
         }
 
-        if (subscriberTopics.containsKey(topicId)) {
-            ArrayList<String> topicSubscribers = subscriberTopics.get(topicId);
-            topicSubscribers.add(subscriberName);
-        } else {
-            ArrayList<String> topicSubscribers = new ArrayList<>();
-            topicSubscribers.add(subscriberName);
-            subscriberTopics.put(topicId, topicSubscribers);
+        // add subscriber to topic if not already subscribed
+        subscriberTopics.putIfAbsent(topicId, new HashSet<>());
+        if (subscriberTopics.get(topicId).contains(subscriberName)) {
+            throw new RemoteException("Subscriber already subscribed to topic.");
         }
+
+        subscriberTopics.get(topicId).add(subscriberName);
 
         // add to cache and flood
         Request request = new Request(topicId);
@@ -157,8 +157,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
         }
 
         if (subscriberTopics.containsKey(topicId)) {
-            ArrayList<String> topicSubscribers = subscriberTopics.get(topicId);
-            topicSubscribers.remove(subscriberName);
+            subscriberTopics.get(topicId).remove(subscriberName);
 
             // send message to local subscriber
             messageSubscriber(subscriberName, "Unsubscribed from topic: " + topicId);
@@ -183,7 +182,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
         if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.SUBSCRIBER_COUNT) {
             cache.put(cacheKey, MessageType.SUBSCRIBER_COUNT);
             long topicId = (long) request.getObject();
-            this.subscriberCount.put(topicId, this.subscriberCount.getOrDefault(topicId, 0) + 1);
+            this.subscriberCount.computeIfPresent(topicId, (k, v) -> v + 1);
 
             // Flood the message to all brokers
             for (IRemoteBroker broker : brokers) {
@@ -198,7 +197,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
         if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.SUBSCRIBER_COUNT) {
             cache.put(cacheKey, MessageType.SUBSCRIBER_COUNT);
             long topicId = (long) request.getObject();
-            this.subscriberCount.put(topicId, this.subscriberCount.get(topicId) - 1);
+            this.subscriberCount.computeIfPresent(topicId, (k, v) -> v - 1);
 
             // Flood the message to all brokers
             for (IRemoteBroker broker : brokers) {
@@ -224,7 +223,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
 
             // send message to all local subscribers
             if (subscriberTopics.containsKey(message.getTopicId())) {
-                ArrayList<String> topicSubscribers = subscriberTopics.get(message.getTopicId());
+                HashSet<String> topicSubscribers = subscriberTopics.get(message.getTopicId());
                 for (String subscriber : topicSubscribers) {
                     messageSubscriber(subscriber, message.getMessage());
                 }
@@ -243,7 +242,10 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
 
     @Override
     public ArrayList<String> listSubscribers(long topicId) throws RemoteException {
-        return subscriberTopics.get(topicId);
+        if (subscriberTopics.containsKey(topicId)) {
+            return new ArrayList<>(subscriberTopics.get(topicId));
+        }
+        return new ArrayList<>();
     }
 
     @Override
@@ -333,7 +335,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
         for (Topic topic : topics) {
             long topicId = topic.getTopicId();
             if (subscriberTopics.containsKey(topicId)) {
-                ArrayList<String> topicSubscribers = subscriberTopics.get(topicId);
+                HashSet<String> topicSubscribers = subscriberTopics.get(topicId);
                 if (topicSubscribers.contains(subscriberName)) {
                     subscribedTopics.add(topic);
                 }
@@ -379,7 +381,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
         for (Topic topic : topics) {
             long topicId = topic.getTopicId();
             if (subscriberTopics.containsKey(topicId)) {
-                ArrayList<String> topicSubscribers = subscriberTopics.get(topicId);
+                HashSet<String> topicSubscribers = subscriberTopics.get(topicId);
                 topicSubscribers.remove(subscriberName);
 
                 // decrease subscriber count
@@ -400,7 +402,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
                 long topicId = topic.getTopicId();
                 // notify all subscribers
                 if (subscriberTopics.containsKey(topicId)) {
-                    ArrayList<String> topicSubscribers = subscriberTopics.get(topicId);
+                    HashSet<String> topicSubscribers = subscriberTopics.get(topicId);
                     for (String subscriber : topicSubscribers) {
                         messageSubscriber(subscriber, "publisher disconnected: " + publisherName + "; " + "you are unsubscribed from topic " + topicId);
                     }

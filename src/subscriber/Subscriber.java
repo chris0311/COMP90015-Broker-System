@@ -1,5 +1,6 @@
 package subscriber;
 
+import message.Request;
 import message.Topic;
 import remote.IRemoteBroker;
 import remote.IRemoteDirectory;

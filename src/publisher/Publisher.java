@@ -1,6 +1,8 @@
 package publisher;
 
 import message.Message;
+import message.Request;
+import message.Topic;
 import remote.IRemoteBroker;
 import remote.IRemoteDirectory;
 
@@ -34,7 +36,9 @@ public class Publisher {
                     }
 
                     try {
-                        remoteBroker.addTopic(topicId, commandParts[2], publisherName);
+                        Topic topic = new Topic(topicId, commandParts[2], publisherName);
+                        Request request = new Request(topic);
+                        remoteBroker.addTopic(request);
                     } catch (RemoteException e) {
                         e.printStackTrace();
                     }
@@ -67,7 +71,8 @@ public class Publisher {
                     }
 
                     try {
-                        remoteBroker.removeTopic(topicId);
+                        Request request = new Request(topicId);
+                        remoteBroker.removeTopic(request);
                     } catch (RemoteException e) {
                         e.printStackTrace();
                     }

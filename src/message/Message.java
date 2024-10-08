@@ -1,15 +1,15 @@
 package message;
 
 import java.io.Serializable;
-import java.util.Objects;
 
-public class Message implements Serializable {
+public class Message extends Request implements Serializable {
     private long topicId;
     private String message;
     private long timestamp;
     private String publisherName;
 
     public Message(long topicId, String message, String publisherName) {
+        super();
         this.topicId = topicId;
         this.message = message;
         this.timestamp = System.currentTimeMillis();
@@ -34,12 +34,6 @@ public class Message implements Serializable {
 
     public long getTimestamp() {
         return timestamp;
-    }
-
-    @Override
-    public int hashCode() {
-        // create hashcode based on topicId, publisherName, timestamp, and message
-        return Objects.hash(topicId, publisherName, timestamp, message);
     }
 
     public String getPublisherName() {

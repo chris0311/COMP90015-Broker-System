@@ -8,4 +8,5 @@ public enum MessageType {
     ADD_TOPIC,
     REMOVE_TOPIC,
     MESSAGE,
+    SUBSCRIBER_COUNT,
 }

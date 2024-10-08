@@ -74,6 +74,9 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
             }
 
             topics.removeIf(topic -> topic.getTopicId() == topicId);
+            // remove from subscriberTopics and subscriberCount
+            subscriberTopics.remove(topicId);
+            subscriberCount.remove(topicId);
             System.out.println("Topic removed: " + topicId);
 
             // notify all brokers

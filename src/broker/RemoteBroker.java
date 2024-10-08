@@ -50,21 +50,17 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
                         }
                         return false;
                     });
-                    publishers.entrySet().removeIf(entry -> {
-                        if (currentTime - entry.getValue() > 2000) {
-                            System.out.println("Cleaning up publisher: " + entry.getKey() + " at " + currentTimeSeconds);
-                            Request request = new Request(entry.getKey());
+                    for (String publisher : publishers.keySet()) {
+                        if (currentTime - publishers.get(publisher) > 2000) {
+                            System.out.println("Cleaning up publisher: " + publisher + " at " + currentTimeSeconds);
+                            Request request = new Request(publisher);
                             try {
                                 this.removePublisher(request);
-                                // add key back to publishers to avoid errors
-                                publishers.put(entry.getKey(), currentTime);
                             } catch (RemoteException e) {
-                                e.printStackTrace();
+                                throw new RuntimeException(e);
                             }
-                            return true;
                         }
-                        return false;
-                    });
+                    }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }

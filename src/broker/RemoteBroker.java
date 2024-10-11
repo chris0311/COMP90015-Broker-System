@@ -4,11 +4,14 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import common.MessageType;
 import common.NodeType;
+import error.DuplicateRequestException;
+import error.ResourceNotFoundException;
 import message.Message;
 import message.Request;
 import message.Topic;
 import remote.IRemoteBroker;
 import remote.IRemoteSubscriber;
+import subscriber.AccessDeniedException;
 
 import java.rmi.RemoteException;  // Required for handling remote communication errors.
 import java.rmi.registry.Registry;
@@ -56,8 +59,8 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
                             Request request = new Request(publisher);
                             try {
                                 this.removePublisher(request);
-                            } catch (RemoteException e) {
-                                throw new RuntimeException(e);
+                            } catch (RemoteException | DuplicateRequestException e) {
+                                System.err.println("Error when removing publisher on timeout: " + e.toString());
                             }
                         }
                     }
@@ -92,12 +95,28 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
     }
 
     @Override
-    public void removeTopic(Request request) throws RemoteException {
+    public void removeTopic(Request request) throws RemoteException, DuplicateRequestException, AccessDeniedException {
         String cacheKey = request.getIdentifier();
         // remove topics from all brokers
         if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.REMOVE_TOPIC) {
             cache.put(cacheKey, MessageType.REMOVE_TOPIC);
             long topicId = (long) request.getObject();
+            if (emptyTopic(topicId)) {
+                throw new DuplicateRequestException("ERROR: Topic does not exist.");
+            }
+
+            // Check if the topic belongs to the publisher
+            boolean isPublisher = false;
+            for (Topic topic : topics) {
+                if (topic.getTopicId() == topicId && topic.getPublisherName().equals(request.getData())) {
+                    isPublisher = true;
+                    break;
+                }
+            }
+
+            if (!isPublisher) {
+                throw new AccessDeniedException("ERROR: You are not the publisher of this topic.");
+            }
 
             // send message to all local subscribers
             if (subscriberTopics.containsKey(topicId)) {
@@ -122,15 +141,15 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
     }
 
     @Override
-    public void subscribe(long topicId, String subscriberName) throws RemoteException {
+    public void subscribe(long topicId, String subscriberName) throws RemoteException, ResourceNotFoundException, DuplicateRequestException {
         if (emptyTopic(topicId)) {
-            throw new RemoteException("Topic does not exist.");
+            throw new ResourceNotFoundException("ERROR: Topic does not exist.");
         }
 
         // add subscriber to topic if not already subscribed
         subscriberTopics.putIfAbsent(topicId, new HashSet<>());
         if (subscriberTopics.get(topicId).contains(subscriberName)) {
-            throw new RemoteException("Subscriber already subscribed to topic.");
+            throw new DuplicateRequestException("ERROR: Subscriber already subscribed to topic.");
         }
 
         subscriberTopics.get(topicId).add(subscriberName);
@@ -151,9 +170,9 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
     }
 
     @Override
-    public void unsubscribe(long topicId, String subscriberName) throws RemoteException {
+    public void unsubscribe(long topicId, String subscriberName) throws RemoteException, ResourceNotFoundException {
         if (emptyTopic(topicId)) {
-            throw new RemoteException("Topic does not exist.");
+            throw new ResourceNotFoundException("ERROR: Topic does not exist.");
         }
 
         if (subscriberTopics.containsKey(topicId)) {
@@ -161,6 +180,8 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
 
             // send message to local subscriber
             messageSubscriber(subscriberName, "Unsubscribed from topic: " + topicId);
+        } else {
+            throw new ResourceNotFoundException("ERROR: You are not subscribed to this topic.");
         }
 
         // add to cache and flood
@@ -216,16 +237,42 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
     }
 
     @Override
-    public void publishMessage(Message message) throws RemoteException {
+    public void publishMessage(Message message) throws RemoteException, ResourceNotFoundException, AccessDeniedException {
         // send message to all brokers if not in cache
         if (cache.getIfPresent(message.getIdentifier()) == null || cache.getIfPresent(message.getIdentifier()) != MessageType.MESSAGE) {
             cache.put(String.valueOf(message.getIdentifier()), MessageType.MESSAGE);
+
+            if (emptyTopic(message.getTopicId())) {
+                throw new ResourceNotFoundException("ERROR: Topic does not exist.");
+            }
+
+            // check if the topic belongs to the publisher
+            boolean isPublisher = false;
+            for (Topic topic : topics) {
+                if (topic.getTopicId() == message.getTopicId() && topic.getPublisherName().equals(message.getPublisherName())) {
+                    isPublisher = true;
+                    break;
+                }
+            }
+
+            if (!isPublisher) {
+                throw new AccessDeniedException("ERROR: You are not the publisher of this topic.");
+            }
 
             // send message to all local subscribers
             if (subscriberTopics.containsKey(message.getTopicId())) {
                 HashSet<String> topicSubscribers = subscriberTopics.get(message.getTopicId());
                 for (String subscriber : topicSubscribers) {
-                    messageSubscriber(subscriber, message.getMessage());
+                    // find topic name
+                    String topicName = "";
+                    for (Topic topic : topics) {
+                        if (topic.getTopicId() == message.getTopicId()) {
+                            topicName = topic.getTopicName();
+                            break;
+                        }
+                    }
+                    String msg = message.getTopicId() + ":" + topicName + ": " + message.getMessage();
+                    messageSubscriber(subscriber, msg);
                 }
             }
 
@@ -277,14 +324,17 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
 
     @Override
     public void addPublisher(String publisherName) throws RemoteException {
-        long currentTimeMillis = System.currentTimeMillis();
-        long currentTimeSeconds = currentTimeMillis / 1000;
-        publishers.put(publisherName, currentTimeMillis);
-        System.out.println("Publisher " + publisherName + " added at " + currentTimeSeconds);
+        publishers.compute(publisherName, (key, value) -> {
+            if (value != null) {
+                System.out.println("Publisher " + publisherName + " already exists.");
+            }
+            return System.currentTimeMillis();
+        });
+        System.out.println("Publisher " + publisherName + " added at " + System.currentTimeMillis());
     }
 
     @Override
-    public void removePublisher(Request request) throws RemoteException {
+    public void removePublisher(Request request) throws RemoteException, DuplicateRequestException {
         String cacheKey = request.getIdentifier();
         if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.REMOVE_PUBLISHER) {
             cache.put(cacheKey, MessageType.REMOVE_PUBLISHER);

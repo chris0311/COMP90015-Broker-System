@@ -40,10 +40,6 @@ public class Topic extends Request implements Serializable {
 
     @Override
     public String toString() {
-        return "Topic{" +
-                "topicId=" + topicId +
-                ", topicName='" + topicName + '\'' +
-                ", publisherName='" + publisherName + '\'' +
-                '}';
+        return topicId + " " + topicName + " " + publisherName;
     }
 }

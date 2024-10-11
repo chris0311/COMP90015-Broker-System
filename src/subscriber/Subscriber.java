@@ -1,6 +1,8 @@
 package subscriber;
 
 import common.NodeType;
+import error.DuplicateRequestException;
+import error.ResourceNotFoundException;
 import message.Request;
 import message.Topic;
 import remote.IRemoteBroker;
@@ -29,7 +31,7 @@ public class Subscriber {
                 remoteBroker.removeSubscriber(subscriberName);
                 registry.unbind("subscriber/" + subscriberName);
             } catch (RemoteException e) {
-                e.printStackTrace();
+                System.out.println("Broker disconnected.");
             } catch (NotBoundException e) {
                 System.out.println("Subscriber not bound, skipping unbinding.");
             }
@@ -37,7 +39,12 @@ public class Subscriber {
 
         initConnection(args);
         while(true) {
-            System.out.println("Please select command: list, sub, current, unsub.");
+            System.out.println("""
+                    Please select command: list, sub, current, unsub.
+                    1. list # list all topics
+                    2. sub {topic_id} # subscribe to a topic
+                    3. current # show the current subscriptions of the subscriber
+                    4. unsub {topic_id} # unsubscribe from a topic""");
             String command = scanner.nextLine();
             String[] commandParts = command.split(" ");
             long topicId;
@@ -46,14 +53,21 @@ public class Subscriber {
                 case "list":
                     try {
                         ArrayList<Topic> topics = remoteBroker.listTopics();
+                        if (topics.isEmpty()) {
+                            System.out.println("No topics available");
+                        }
                         for (Topic topic : topics) {
                             System.out.println(topic);
                         }
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        System.err.println("Server error: " + e.getMessage());
                     }
                     break;
                 case "sub":
+                    if (commandParts.length < 2) {
+                        System.out.println("ERROR: Invalid command.");
+                        continue;
+                    }
                     topicId = validateTopicId(commandParts[1]);
                     if (topicId == -1) {
                         continue;
@@ -61,22 +75,31 @@ public class Subscriber {
 
                     try {
                         remoteBroker.subscribe(topicId, subscriberName);
-                        System.out.println("Subscribed to topic " + topicId);
+                        System.out.println("SUCCESS: Subscribed to topic " + topicId);
+                    } catch (DuplicateRequestException | ResourceNotFoundException | RemoteException e) {
+                        System.out.println(e.getMessage());
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        System.err.println("Server error: " + e.getMessage());
                     }
                     break;
                 case "current":
                     try {
                         ArrayList<Topic> res = remoteBroker.listSubscribedTopics(subscriberName);
+                        if (res.isEmpty()) {
+                            System.out.println("No subscribed topics");
+                        }
                         for (Topic topic : res) {
                             System.out.println(topic);
                         }
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        System.err.println("Server error: " + e.getMessage());
                     }
                     break;
                 case "unsub":
+                    if (commandParts.length < 2) {
+                        System.out.println("ERROR: Invalid command.");
+                        continue;
+                    }
                     topicId = validateTopicId(commandParts[1]);
                     if (topicId == -1) {
                         continue;
@@ -84,12 +107,14 @@ public class Subscriber {
 
                     try {
                         remoteBroker.unsubscribe(topicId, subscriberName);
+                    } catch (ResourceNotFoundException e) {
+                        System.out.println(e.getMessage());
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        System.err.println("Server error: " + e.getMessage());
                     }
                     break;
                 default:
-                    System.out.println("Invalid command");
+                    System.out.println("ERROR: Invalid command");
             }
         }
     }
@@ -98,7 +123,7 @@ public class Subscriber {
         try {
             subscriberName = args[0];
         } catch (Exception e) {
-            System.err.println("Invalid Name: " + e.toString());
+            System.err.println("ERROR: Invalid Name: " + e.toString());
             System.exit(1);
         }
 
@@ -135,7 +160,7 @@ public class Subscriber {
             RemoteSubscriber remoteSubscriber = new RemoteSubscriber();
             registry.rebind("subscriber/" + subscriberName, remoteSubscriber);
         } catch (Exception e) {
-            System.err.println("Subscriber exception: " + e.toString());
+            System.err.println("ERROR: Subscriber exception: " + e.toString());
             System.exit(1);
         }
     }
@@ -144,7 +169,7 @@ public class Subscriber {
         try {
             return Long.parseLong(topicId);
         } catch (NumberFormatException e) {
-            System.err.println("Invalid Topic ID: " + e.toString());
+            System.out.println("ERROR: Invalid Topic ID: " + e.toString());
         }
         return -1;
     }

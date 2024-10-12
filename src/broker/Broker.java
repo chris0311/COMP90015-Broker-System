@@ -3,6 +3,7 @@ package broker;
 import remote.IRemoteBroker;
 import remote.IRemoteDirectory;
 
+import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.util.ArrayList;
@@ -46,6 +47,9 @@ public class Broker {
             System.out.println("Broker bound to registry");
             remoteBroker.connectAllBrokers();
 
+        } catch (RemoteException e) {
+            System.err.println("ERROR: registry error: " + e.toString());
+            System.exit(1);
         } catch (Exception e) {
             System.err.println("Broker exception: " + e.toString());
             System.exit(1);

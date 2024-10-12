@@ -21,6 +21,9 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.concurrent.ConcurrentHashMap;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
 public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
     private ArrayList<Topic> topics = new ArrayList<>();
     // topic id and list of subscribers
@@ -56,7 +59,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
                     for (String publisher : publishers.keySet()) {
                         if (currentTime - publishers.get(publisher) > 2000) {
                             System.out.println("Cleaning up publisher: " + publisher + " at " + currentTimeSeconds);
-                            Request request = new Request(publisher);
+                            Request<String> request = new Request<>(publisher);
                             try {
                                 this.removePublisher(request);
                             } catch (RemoteException | DuplicateRequestException e) {
@@ -77,7 +80,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
     }
 
     @Override
-    public void addTopic(Request request) throws RemoteException {
+    public void addTopic(Request<Topic> request) throws RemoteException {
         String cacheKey = request.getIdentifier();
         // add topics to all brokers
         if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.ADD_TOPIC) {
@@ -95,7 +98,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
     }
 
     @Override
-    public void removeTopic(Request request) throws RemoteException, DuplicateRequestException, AccessDeniedException {
+    public void removeTopic(Request<Long> request) throws RemoteException, DuplicateRequestException, AccessDeniedException {
         String cacheKey = request.getIdentifier();
         // remove topics from all brokers
         if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.REMOVE_TOPIC) {
@@ -155,7 +158,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
         subscriberTopics.get(topicId).add(subscriberName);
 
         // add to cache and flood
-        Request request = new Request(topicId);
+        Request<Long> request = new Request<>(topicId);
         String cacheKey = request.getIdentifier();
         if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.SUBSCRIBER_COUNT) {
             cache.put(cacheKey, MessageType.SUBSCRIBER_COUNT);
@@ -175,17 +178,17 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
             throw new ResourceNotFoundException("ERROR: Topic does not exist.");
         }
 
-        if (subscriberTopics.containsKey(topicId)) {
+        // only remove if subscriber is subscribed
+        if (subscriberTopics.containsKey(topicId) && subscriberTopics.get(topicId).contains(subscriberName)) {
             subscriberTopics.get(topicId).remove(subscriberName);
-
-            // send message to local subscriber
-            messageSubscriber(subscriberName, "Unsubscribed from topic: " + topicId);
+            messageSubscriber(subscriberName, "SUCCESS: Unsubscribed from topic: " + topicId);
+            System.out.println("Subscriber " + subscriberName + " unsubscribed from topic: " + topicId);
         } else {
             throw new ResourceNotFoundException("ERROR: You are not subscribed to this topic.");
         }
 
         // add to cache and flood
-        Request request = new Request(topicId);
+        Request<Long> request = new Request<>(topicId);
         String cacheKey = request.getIdentifier();
         if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.UNSUBSCRIBE) {
             cache.put(cacheKey, MessageType.UNSUBSCRIBE);
@@ -198,12 +201,12 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
     }
 
     @Override
-    public void increaseSubscriberCount(Request request) throws RemoteException {
+    public void increaseSubscriberCount(Request<Long> request) throws RemoteException {
         String cacheKey = request.getIdentifier();
         if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.SUBSCRIBER_COUNT) {
             cache.put(cacheKey, MessageType.SUBSCRIBER_COUNT);
             long topicId = (long) request.getObject();
-            this.subscriberCount.computeIfPresent(topicId, (k, v) -> v + 1);
+            this.subscriberCount.computeIfPresent(topicId, (_, v) -> v + 1);
 
             // Flood the message to all brokers
             for (IRemoteBroker broker : brokers) {
@@ -213,12 +216,12 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
     }
 
     @Override
-    public void decreaseSubscriberCount(Request request) throws RemoteException {
+    public void decreaseSubscriberCount(Request<Long> request) throws RemoteException {
         String cacheKey = request.getIdentifier();
         if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.SUBSCRIBER_COUNT) {
             cache.put(cacheKey, MessageType.SUBSCRIBER_COUNT);
             long topicId = (long) request.getObject();
-            this.subscriberCount.computeIfPresent(topicId, (k, v) -> v - 1);
+            this.subscriberCount.computeIfPresent(topicId, (_, v) -> v - 1);
 
             // Flood the message to all brokers
             for (IRemoteBroker broker : brokers) {
@@ -261,17 +264,21 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
 
             // send message to all local subscribers
             if (subscriberTopics.containsKey(message.getTopicId())) {
+                // find topic name
+                String topicName = "";
+                for (Topic topic : topics) {
+                    if (topic.getTopicId() == message.getTopicId()) {
+                        topicName = topic.getTopicName();
+                        break;
+                    }
+                }
+                LocalDateTime messageTime = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(message.getTimestamp()), java.time.ZoneId.systemDefault());
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+                String formattedMessageTime = messageTime.format(formatter);
+
+                String msg = "[" + formattedMessageTime + "] " + message.getTopicId() + ":" + topicName + ": " + message.getMessage();
                 HashSet<String> topicSubscribers = subscriberTopics.get(message.getTopicId());
                 for (String subscriber : topicSubscribers) {
-                    // find topic name
-                    String topicName = "";
-                    for (Topic topic : topics) {
-                        if (topic.getTopicId() == message.getTopicId()) {
-                            topicName = topic.getTopicName();
-                            break;
-                        }
-                    }
-                    String msg = message.getTopicId() + ":" + topicName + ": " + message.getMessage();
                     messageSubscriber(subscriber, msg);
                 }
             }
@@ -324,7 +331,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
 
     @Override
     public void addPublisher(String publisherName) throws RemoteException {
-        publishers.compute(publisherName, (key, value) -> {
+        publishers.compute(publisherName, (_, value) -> {
             if (value != null) {
                 System.out.println("Publisher " + publisherName + " already exists.");
             }
@@ -334,7 +341,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
     }
 
     @Override
-    public void removePublisher(Request request) throws RemoteException, DuplicateRequestException {
+    public void removePublisher(Request<String> request) throws RemoteException, DuplicateRequestException {
         String cacheKey = request.getIdentifier();
         if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.REMOVE_PUBLISHER) {
             cache.put(cacheKey, MessageType.REMOVE_PUBLISHER);
@@ -435,7 +442,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
                 topicSubscribers.remove(subscriberName);
 
                 // decrease subscriber count
-                Request request = new Request(topicId);
+                Request<Long> request = new Request<>(topicId);
                 try {
                     this.decreaseSubscriberCount(request);
                 } catch (RemoteException e) {
@@ -466,19 +473,4 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
         topics.removeAll(topicsToRemove);
         System.out.println("All topics removed for publisher: " + publisherName);
     }
-//    public static <T> void flood(
-//            Cache<String, MessageType> cache,
-//            T key,
-//            MessageType expectedType,
-//            Supplier<Boolean> cacheCheck,
-//            Runnable brokerAction
-//    ) {
-//        // Check if the cache contains the expected value
-//        if (cacheCheck.get() == null || !cacheCheck.get().equals(expectedType)) {
-//            // Perform the broker action
-//            brokerAction.run();
-//            // Update the cache with the new value
-//            cache.put(key, expectedType);
-//        }
-//    }
 }

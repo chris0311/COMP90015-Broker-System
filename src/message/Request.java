@@ -3,21 +3,21 @@ package message;
 import java.io.Serializable;
 import java.util.UUID;
 
-public class Request implements Serializable {
+public class Request<T extends Serializable> implements Serializable {
     private final UUID id;
     private String data;
-    private Object object;
+    private T object;
 
     public Request() {
         this.id = UUID.randomUUID();
     }
 
-    public Request(Object object) {
+    public Request(T object) {
         this.object = object;
         this.id = UUID.randomUUID();
     }
 
-    public Request(String data, Object object) {
+    public Request(String data, T object) {
         this.object = object;
         this.data = data;
         this.id = UUID.randomUUID();

@@ -9,6 +9,7 @@ import remote.IRemoteBroker;
 import remote.IRemoteDirectory;
 import remote.IRemoteSubscriber;
 
+import java.rmi.ConnectException;
 import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
@@ -25,7 +26,6 @@ public class Subscriber {
 
     public static void main(String[] args) {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("Shutting down...");
             // perform remove publisher
             try {
                 remoteBroker.removeSubscriber(subscriberName);
@@ -34,6 +34,7 @@ public class Subscriber {
                 System.out.println("Broker disconnected.");
             } catch (NotBoundException e) {
                 System.out.println("Subscriber not bound, skipping unbinding.");
+            } catch (Exception ignored) {
             }
         }));
 
@@ -134,6 +135,11 @@ public class Subscriber {
             IRemoteDirectory remoteDirectory = (IRemoteDirectory) registry.lookup("RemoteDirectory");
             brokers = remoteDirectory.listBrokers();
 
+            if (brokers.isEmpty()) {
+                System.err.println("ERROR: No brokers available.");
+                System.exit(1);
+            }
+
             // randomly select a broker
             int randomBroker = (int) (Math.random() * brokers.size());
             String address = brokers.get(randomBroker).keySet().iterator().next();
@@ -159,6 +165,12 @@ public class Subscriber {
             // register subscriber
             RemoteSubscriber remoteSubscriber = new RemoteSubscriber();
             registry.rebind("subscriber/" + subscriberName, remoteSubscriber);
+        } catch (RemoteException e) {
+            System.err.println("ERROR: Registry error: " + e.toString());
+            System.exit(1);
+        } catch (NotBoundException e) {
+            System.err.println("ERROR: RemoteDirectory not bound: " + e.toString());
+            System.exit(1);
         } catch (Exception e) {
             System.err.println("ERROR: Subscriber exception: " + e.toString());
             System.exit(1);

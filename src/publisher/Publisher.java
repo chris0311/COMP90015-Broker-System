@@ -28,8 +28,6 @@ public class Publisher {
     public static void main(String[] args) {
         // Register shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-//            System.out.println("Shutting down...");
-            // perform remove publisher
             try {
                 Request request = new Request(publisherName);
                 remoteBroker.removePublisher(request);
@@ -37,6 +35,7 @@ public class Publisher {
                 System.out.println("Broker disconnected.");
             } catch (RemoteException | DuplicateRequestException e) {
                 System.err.println("Remote error, check broker connection: " + e.getMessage());
+            } catch (Exception ignored) {
             }
         }));
 
@@ -143,6 +142,10 @@ public class Publisher {
         try {
             IRemoteDirectory remoteDirectory = (IRemoteDirectory) registry.lookup("RemoteDirectory");
             brokers = remoteDirectory.listBrokers();
+            if (brokers.isEmpty()) {
+                System.err.println("ERROR: No brokers available.");
+                System.exit(1);
+            }
 
             // randomly select a broker
             int randomBroker = (int) (Math.random() * brokers.size());
@@ -166,6 +169,9 @@ public class Publisher {
             pingThread.setDaemon(true); // Set as daemon so it terminates when the main thread ends
             pingThread.start();
 
+        } catch (RemoteException e) {
+            System.err.println("ERROR: Registry error: " + e.toString());
+            System.exit(1);
         } catch (Exception e) {
             System.err.println("ERROR: Publisher exception: " + e.toString());
             System.exit(1);

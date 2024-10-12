@@ -156,20 +156,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
         }
 
         subscriberTopics.get(topicId).add(subscriberName);
-
-        // add to cache and flood
-        Request<Long> request = new Request<>(topicId);
-        String cacheKey = request.getIdentifier();
-        if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.SUBSCRIBER_COUNT) {
-            cache.put(cacheKey, MessageType.SUBSCRIBER_COUNT);
-            this.subscriberCount.put(topicId, this.subscriberCount.getOrDefault(topicId, 0) + 1);
-
-            System.out.println("Subscriber " + subscriberName + " subscribed to topic: " + topicId);
-
-            for (IRemoteBroker broker : brokers) {
-                broker.increaseSubscriberCount(request);
-            }
-        }
+        this.increaseSubscriberCount(new Request<>(topicId));
     }
 
     @Override
@@ -187,17 +174,8 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
             throw new ResourceNotFoundException("ERROR: You are not subscribed to this topic.");
         }
 
-        // add to cache and flood
-        Request<Long> request = new Request<>(topicId);
-        String cacheKey = request.getIdentifier();
-        if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.UNSUBSCRIBE) {
-            cache.put(cacheKey, MessageType.UNSUBSCRIBE);
-            this.subscriberCount.put(topicId, this.subscriberCount.get(topicId) - 1);
-
-            for (IRemoteBroker broker : brokers) {
-                broker.decreaseSubscriberCount(request);
-            }
-        }
+        // call decreaseSubscriberCount
+        this.decreaseSubscriberCount(new Request<>(topicId));
     }
 
     @Override
@@ -207,6 +185,7 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
             cache.put(cacheKey, MessageType.SUBSCRIBER_COUNT);
             long topicId = (long) request.getObject();
             this.subscriberCount.computeIfPresent(topicId, (_, v) -> v + 1);
+            System.out.println("Subscriber count increased for topic: " + topicId);
 
             // Flood the message to all brokers
             for (IRemoteBroker broker : brokers) {
@@ -221,7 +200,8 @@ public class RemoteBroker extends UnicastRemoteObject implements IRemoteBroker {
         if (cache.getIfPresent(cacheKey) == null || cache.getIfPresent(cacheKey) != MessageType.SUBSCRIBER_COUNT) {
             cache.put(cacheKey, MessageType.SUBSCRIBER_COUNT);
             long topicId = (long) request.getObject();
-            this.subscriberCount.computeIfPresent(topicId, (_, v) -> v - 1);
+            this.subscriberCount.computeIfPresent(topicId, (_, v) -> Math.max(v - 1, 0));
+            System.out.println("Subscriber count decreased for topic: " + topicId);
 
             // Flood the message to all brokers
             for (IRemoteBroker broker : brokers) {

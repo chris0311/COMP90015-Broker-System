@@ -1,3 +1,7 @@
+/**
+ * @Author: Chris Liang 1159696
+ */
+
 package message;
 
 import java.io.Serializable;

@@ -1,0 +1,15 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="broker:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/broker_jar</output-path>
+    <root id="archive" name="COMP90015-Ass3.jar">
+      <element id="module-output" name="COMP90015-Ass3" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/guava-33.3.0-jre.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/failureaccess-1.0.2.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/jsr305-3.0.2.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/checker-qual-3.43.0.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/error_prone_annotations-2.28.0.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/j2objc-annotations-3.0.0.jar" path-in-jar="/" />
+    </root>
+  </artifact>
+</component>

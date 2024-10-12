@@ -1,3 +1,7 @@
+/**
+ * @Author: Chris Liang 1159696
+ */
+
 package publisher;
 
 import common.NodeType;

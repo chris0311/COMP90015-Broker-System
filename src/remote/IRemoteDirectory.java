@@ -1,3 +1,7 @@
+/**
+ * @Author: Chris Liang 1159696
+ */
+
 package remote;
 
 import java.rmi.Remote;  // Importing the Remote interface from the java.rmi package.

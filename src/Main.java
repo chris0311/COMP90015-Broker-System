@@ -1,3 +1,7 @@
+/**
+ * @Author: Chris Liang 1159696
+ */
+
 import remote.IRemoteSubscriber;
 import subscriber.RemoteSubscriber;
 
